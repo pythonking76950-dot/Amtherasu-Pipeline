@@ -1,0 +1,97 @@
+from datetime import datetime, timedelta
+import os
+import time
+import pandas as pd
+import plotly.express as px
+import sqlite3
+
+# 1. ஆண்ட்ராய்டு போனுக்கான Downloads ஃபோல்டர் பாதை மற்றும் டேட்டாபேஸ்
+download_folder = "/storage/emulated/0/Download/"
+db_name = "smart_database.db"
+
+print(
+    "🚀 மேம்படுத்தப்பட்ட அமதெராசு ஆட்டோமேஷன் சிஸ்டம் தொடங்கப்பட்டது!"
+)
+
+while True:
+  try:
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    existing_tables = [row[0] for row in cursor.fetchall()]
+
+    print("\n[🔄 ஃபோல்டர் ஸ்கேன் செய்யப்படுகிறது...]")
+
+    for file_name in os.listdir(download_folder):
+      if file_name.endswith(".csv") or file_name.endswith(".xlsx"):
+        file_path = os.path.join(download_folder, file_name)
+
+        # டேபிள் பெயர் உருவாக்கம்
+        table_name = (
+            os.path.splitext(file_name)[0]
+            .replace(" ", "_")
+            .replace("-", "_")
+            .replace(".", "_")
+        )
+
+        if table_name in existing_tables:
+          continue
+
+        print(f"📥 புதிய ஃபைல் கண்டுபிடிக்கப்பட்டது: {file_name}")
+
+        # Pandas மூலம் படித்தல்
+        try:
+          if file_name.endswith(".csv"):
+            df = pd.read_csv(file_path)
+          else:
+            df = pd.read_excel(file_path)
+        except Exception as e:
+          print(f"⚠️ ஃபைல் படிப்பதில் தடை (இன்னும் டவுன்லோட் ஆகலாம்): {e}")
+          continue
+
+        # 3. துல்லியமான டேட்டா கிளீனிங் (Data Cleaning)
+        # காலியான பெயர்களை நீக்குதல் அல்லது மாற்றுதல்
+        if "name" in df.columns:
+          df = df.dropna(subset=["name"])  # பெயர் இல்லாத வரிகளை நீக்கிவிடும்
+          df["name"] = df["name"].astype(str).str.strip()
+
+        # தொகை (amount) விடுபட்டிருந்தால் 0 என மாற்றுதல்
+        if "amount" in df.columns:
+          df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
+
+        # டூப்ளிகேட் வரி நீக்கம்
+        df = df.drop_duplicates()
+
+        # 4. SQLite டேட்டாபேஸில் சேமித்தல்
+        df.to_sql(table_name, conn, if_exists="replace", index=False)
+        print(f"✅ வெற்றிகரமாகக் கிளீன் செய்யப்பட்டு '{table_name}' சேமிக்கப்பட்டது!")
+
+        # 5. Plotly மூலம் சரியான கிராஃப் (Chart) உருவாக்குவது
+        # name மற்றும் amount காலம்கள் சரியாக உள்ளதா என சரிபார்த்து கிராஃப் உருவாக்குதல்
+        if "name" in df.columns and "amount" in df.columns:
+          try:
+            fig = px.bar(
+                df,
+                x="name",
+                y="amount",
+                title=f"📊 Live Visual Analytics - {table_name}",
+            )
+
+            chart_file_name = f"{table_name}_chart.html"
+            chart_file_path = os.path.join(download_folder, chart_file_name)
+            fig.write_html(chart_file_path)
+
+            print(f"📈 கிராஃப் ஃபைல் சேமிக்கப்பட்டது: {chart_file_name}")
+          except Exception as chart_err:
+            print(f"⚠️ கிராஃப் உருவாக்குவதில் பிழை: {chart_err}")
+
+        existing_tables.append(table_name)
+
+    conn.close()
+
+  except Exception as e:
+    print(f"❌ சிறிய பிழை: {e}")
+
+  # 1 நிமிடத்திற்கு ஒருமுறை செக் செய்யும்
+  time.sleep(60)
